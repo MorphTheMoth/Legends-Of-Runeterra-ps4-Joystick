@@ -17,20 +17,21 @@ width, height = 1920, 1080
 curI, curJ = -1, -1   #joystick cursor current position in the matrix
 
 class Point:
-  def __init__(self, x, y):
+  def __init__(self, x, y, id):
     self.x = x
     self.y = y
+    self.id = id
   def __repr__(self):
     return str(self.x)+' '+str(self.y)
 
 def handHovering():
     return height - pyautogui.position().y < 90 and pyautogui.position().x < 1700 and pyautogui.position().x > 220
 def coord(card):
-    return Point(card['TopLeftX']+card['Width']/2, card['TopLeftY']-card['Height']/2)
+    return Point(card['TopLeftX']+card['Width']/2, card['TopLeftY']-card['Height']/2, card['CardID'])
 def enemyHandCoord(card):
-    return Point(card['TopLeftX']+card['Width']/2, 1065)
+    return Point(card['TopLeftX']+card['Width']/2, 1065, card['CardID'])
 def handCoord(card):
-    return Point(card['TopLeftX']+card['Width']/4, 40)
+    return Point(card['TopLeftX']+card['Width']/4, 40, card['CardID'])
 
 def getGameData():
     global gameData, gameMatrix
@@ -149,10 +150,8 @@ def input():
                         break
 
                 if currCh == -1:
-                    if info.dwPOV == 27000 or info.dwPOV == 0 or info.dwPOV == 18000:
+                    if info.dwPOV == 27000 or info.dwPOV == 0 or info.dwPOV == 18000 or info.dwPOV == 9000:
                         pyautogui.moveTo(chArr[math.floor(len(chArr)/2)].x, chArr[math.floor(len(chArr)/2)].y, 0.1)
-                    elif info.dwPOV == 9000:
-                        pyautogui.moveTo(chArr[math.floor(len(chArr)/2)].x, chArr[math.ceil(len(chArr)/2)].y, 0.1)
                 elif info.dwPOV == 9000:
                     if currCh != len(chArr)-1:
                         pyautogui.moveTo(chArr[currCh+1].x, chArr[currCh+1].y)
