@@ -22,7 +22,7 @@ class Point:
     self.y = y
     self.id = id
   def __repr__(self):
-    return str(self.x)+' '+str(self.y)
+    return str(self.x)+' '+str(self.y)+' '+str(self.id)+'\n'
 
 def handHovering():
     return height - pyautogui.position().y < 90 and pyautogui.position().x < 1700 and pyautogui.position().x > 220
@@ -64,8 +64,17 @@ def getGameData():
 
         for a in newMatrix:
             a.sort(key=lambda x: x.x)
-        # print(gameMatrix)
+        #print(newMatrix)
         gameMatrix = newMatrix
+
+
+def moveCursorToId(nextCardId):
+    global curI, curJ
+    for i, row in enumerate(gameMatrix):
+        for j, c in enumerate(row):
+            if c.id == nextCardId:
+                curI = i
+                curJ = j
 
 
 def choiceArray():  # how many cards are you choosing?
@@ -125,19 +134,18 @@ def toogleMatrix():
 
 
 def input():
-    global run, ret, curI, curJ, move, cdCounter, caps, id
+    global run, ret, curI, curJ, move, caps, id, keepCursorOnCard
     if msvcrt.kbhit() and msvcrt.getch() == chr(27).encode(): # detect ESC (panic button)
         run = False
 
     ret, info = joystickapi.joyGetPosEx(id)
-    #print(info.dwPOV)
+    
     if ret:
         btns = [(1 << i) & info.dwButtons != 0 for i in range(caps.wNumButtons)]
         if info.dwButtons:
             print("buttons: ", btns)
 
         if info.dwPOV != 65535:
-            cdCounter = 0
             print(info.dwPOV)
             # check if there is a choice to make
             if checkChoice():
@@ -171,7 +179,7 @@ def input():
                     lineY = 690
                 if info.dwPOV == 9000:  # right
                     for i, p in enumerate(gameMatrix[atk]):
-                        if( abs(p.x - pyautogui.position().x) < 20  and  i != len(gameMatrix[atk])-1 ):
+                        if( abs(p.x - pyautogui.position().x) < 20 and i != len(gameMatrix[atk])-1 ):
                             pyautogui.moveTo(gameMatrix[atk][i+1].x, 1080-lineY, 0.1)
                             break
                 elif info.dwPOV == 27000:  # left
@@ -209,9 +217,10 @@ def input():
                 pyautogui.click()
 
 
-        if btns[0]:    # Quadrato
+        if btns[0]:   # Quadrato
             if curI == 6: #from hand
                 pyautogui.dragRel(0, -400, 0.2, button='left')
+                keepCursorOnCard = True
             elif curI == 5:  # from board
                 # check if the enemy is attacking, to give choice on where to defense
                 if len(gameMatrix[2]) > len(gameMatrix[4]):
@@ -227,13 +236,11 @@ def input():
                     pyautogui.mouseDown() #keep the mouse clicked, to choose where to put the card
                     pyautogui.moveTo(gameMatrix[4][math.floor(len(gameMatrix[4])/2)].x, 1080-690, 0.1)
                 
-            cdCounter = 0
 
         if btns[3]:   # Triangolo
             pyautogui.moveTo(1670, 540)
             pyautogui.click()
             toogleMatrix()
-            cdCounter = 0
 
         if btns[2]:   # Cerchio
             if abs(pyautogui.position().y - height/2) < 20:
@@ -241,19 +248,17 @@ def input():
                 pyautogui.moveTo(pyautogui.position().x, 1000, 0.1)
                 pyautogui.mouseUp()
                 toogleMatrix()
-                cdCounter = 0
+            
 
         if len(btns) > 12:
             if btns[12]:
                 toogleMatrix()
-                cdCounter = 0
-            
 
-DELAY = 1/30
-COOLDOWN = 1 / DELAY / 20  # clicks per second
-cdCounter = 0
+ 
+DELAY = 1/30 #30 inputs per second (except it takes a bit to process every input so it's less than 30)
 
 num = joystickapi.joyGetNumDevs()
+print('gamepad connected = ', num)
 ret, caps, startinfo = False, None, None
 for id in range(num):
     ret, caps = joystickapi.joyGetDevCaps(id)
@@ -268,19 +273,20 @@ gameData = json.loads(urllib.request.urlopen("http://localhost:21337/positional-
 _thread.start_new_thread(getGameData, ())
 
 run = ret
+move = True
+keepCursorOnCard = False
 
 #----------------------------------------------------------------------------------------------#
-move = True
 while run:
-    cdCounter += 1
     time.sleep(DELAY)
 
-    if( cdCounter > COOLDOWN ):
-        input()
-        if(move):
-            if (curI, curJ) != (-1, -1):
-                print(gameMatrix[curI][curJ].x, ' - ', 1080 - gameMatrix[curI][curJ].y)
-                pyautogui.moveTo(gameMatrix[curI][curJ].x, 1080 - gameMatrix[curI][curJ].y)
-            else:
-                pyautogui.moveTo(1919, 1079)
-            move = False
+    input()
+    if(keepCursorOnCard):
+        moveCursorToId(gameMatrix[curI][curJ])
+    if(move):
+        if (curI, curJ) != (-1, -1):
+            print(gameMatrix[curI][curJ].x, ' - ', 1080 - gameMatrix[curI][curJ].y)
+            pyautogui.moveTo(gameMatrix[curI][curJ].x, 1080 - gameMatrix[curI][curJ].y)
+        else:
+            pyautogui.moveTo(1918, 1078)
+        move = False
