@@ -160,22 +160,32 @@ def input():
                         pyautogui.moveTo(chArr[currCh-1].x, chArr[currCh-1].y)
                 return
 
-            # check if the enemy is attacking, to give choice on where to defense
-            if len(gameMatrix[2]) > len(gameMatrix[4]) and win32api.GetAsyncKeyState(0x01) < 0:
+            # if the enemy is attacking, or if i am attacking () to give choice on where to defense
+            # len(gameMatrix[2]) > len(gameMatrix[4]) and
+            if win32api.GetAsyncKeyState(0x01) < 0: #if left click is being clicked
+                if len(gameMatrix[2]) > len(gameMatrix[4]):
+                    atk = 2 #whos attacking
+                    lineY = 450 #where is the line of defense
+                else:
+                    atk = 4
+                    lineY = 690
                 if info.dwPOV == 9000:  # right
-                    for i, p in enumerate(gameMatrix[2]):
-                        if( abs(p.x - pyautogui.position().x) < 20  and  i != len(gameMatrix[2])-1 ):
-                            pyautogui.moveTo(gameMatrix[2][i+1].x, 1080-450, 0.1)
+                    for i, p in enumerate(gameMatrix[atk]):
+                        if( abs(p.x - pyautogui.position().x) < 20  and  i != len(gameMatrix[atk])-1 ):
+                            pyautogui.moveTo(gameMatrix[atk][i+1].x, 1080-lineY, 0.1)
                             break
                 elif info.dwPOV == 27000:  # left
-                    for i, p in enumerate(gameMatrix[2]):
+                    for i, p in enumerate(gameMatrix[atk]):
                         if( abs(p.x - pyautogui.position().x) < 20 and i != 0 ):
-                            pyautogui.moveTo(gameMatrix[2][i-1].x, 1080-450, 0.1)
+                            pyautogui.moveTo(gameMatrix[atk][i-1].x, 1080-lineY, 0.1)
                             break
-                elif info.dwPOV == 18000:  # down
+                elif info.dwPOV == 18000 and atk == 2: # down
                     pyautogui.moveRel(0, 250, 0.1)
                     pyautogui.mouseUp()
-                return 
+                elif info.dwPOV == 0 and atk == 4:  # up
+                    pyautogui.moveRel(0, -250, 0.1)
+                    pyautogui.mouseUp()
+                return
 
             move = True
             if (curI, curJ) == (-1, -1):
@@ -193,24 +203,30 @@ def input():
                 moveLeftMatrix()
         
         if btns[1]:   # Croce
-            if curI == 6:
+            if(win32api.GetAsyncKeyState(0x01) < 0):
+                pyautogui.mouseUp()
+            else:
+                pyautogui.click()
+
+
+        if btns[0]:    # Quadrato
+            if curI == 6: #from hand
                 pyautogui.dragRel(0, -400, 0.2, button='left')
-            elif curI == 5:
+            elif curI == 5:  # from board
                 # check if the enemy is attacking, to give choice on where to defense
                 if len(gameMatrix[2]) > len(gameMatrix[4]):
-                    pyautogui.mouseDown()
+                    pyautogui.mouseDown()  # keep the mouse clicked, to choose where to put the card
                     pyautogui.moveTo(gameMatrix[2][math.floor(len(gameMatrix[2])/2)].x, 1080-450, 0.1)
                 else:
                     pyautogui.mouseDown()
                     pyautogui.moveRel(0, -200, 0.1)
                     pyautogui.mouseUp()
-
-            else:
-                if(win32api.GetAsyncKeyState(0x01) < 0):
-                    pyautogui.mouseUp()
-                else:
-                    pyautogui.click()
-            toogleMatrix()
+            elif curI == 1:
+                # check if i am attacking, to select vulnerable enemies
+                if len(gameMatrix[4]) > len(gameMatrix[2]):
+                    pyautogui.mouseDown() #keep the mouse clicked, to choose where to put the card
+                    pyautogui.moveTo(gameMatrix[4][math.floor(len(gameMatrix[4])/2)].x, 1080-690, 0.1)
+                
             cdCounter = 0
 
         if btns[3]:   # Triangolo
@@ -227,9 +243,10 @@ def input():
                 toogleMatrix()
                 cdCounter = 0
 
-        if btns[12]:
-            toogleMatrix()
-            cdCounter = 0
+        if len(btns) > 12:
+            if btns[12]:
+                toogleMatrix()
+                cdCounter = 0
             
 
 DELAY = 1/30
