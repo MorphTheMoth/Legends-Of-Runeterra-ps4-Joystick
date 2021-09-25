@@ -34,7 +34,7 @@ def handCoord(card):
     return Point(card['TopLeftX']+card['Width']/4, 40, card['CardID'])
 
 def getGameData():
-    global gameData, gameMatrix
+    global gameData, gameMatrix, keepCursorOnCard
     while True:
         gameData = json.loads(urllib.request.urlopen("http://localhost:21337/positional-rectangles").read())
         print('--- game data ---')
@@ -44,6 +44,7 @@ def getGameData():
         else:
             newMatrix = [[], [], [], [], [], [], []]
         # -- rectangles matrix
+        trashedRect = 0
         for card in gameData['Rectangles']:
             if(card['CardCode'] == 'face'):
                 continue
@@ -51,30 +52,44 @@ def getGameData():
                 newMatrix[0].append(enemyHandCoord(card))
             elif(card['Height']<180 and card['TopLeftY']>950 and card['TopLeftY']<1000):
                 newMatrix[1].append(coord(card))
-            elif(card['Height']<165 and card['TopLeftY']>780 and card['TopLeftY']<830):
+            elif(card['Height']<180 and card['TopLeftY'] > 780 and card['TopLeftY'] < 830):
                 newMatrix[2].append(coord(card))
             elif(card['Height']<120 and card['Height']>110 and card['Width']<120 and card['Width']>110):
                 newMatrix[3].append(coord(card))
-            elif(card['Height']<165 and card['TopLeftY']>430 and card['TopLeftY']<480):
+            elif(card['Height']<180 and card['TopLeftY']>430 and card['TopLeftY']<480):
                 newMatrix[4].append(coord(card))
             elif(card['Height']<180 and card['TopLeftY']>240 and card['TopLeftY']<280):
                 newMatrix[5].append(coord(card))
             elif(card['TopLeftY']<150 and not handHovering()):
                 newMatrix[6].append(handCoord(card))
+            else:
+                trashedRect += 1
+        
+        if trashedRect > 2 and not handHovering():
+            #raise Exception("A rectangle is not in a section")
+            print('BIG ERROR!!! one or more cards was not in normal spots, retrying to read the data dragon api')
+            return
 
         for a in newMatrix:
             a.sort(key=lambda x: x.x)
         #print(newMatrix)
+
         gameMatrix = newMatrix
+
+        if(keepCursorOnCard != -1 and not win32api.GetAsyncKeyState(0x01) < 0):
+            moveCursorToId(keepCursorOnCard)
+            keepCursorOnCard = -1
 
 
 def moveCursorToId(nextCardId):
-    global curI, curJ
+    global curI, curJ, move
     for i, row in enumerate(gameMatrix):
         for j, c in enumerate(row):
             if c.id == nextCardId:
                 curI = i
                 curJ = j
+    move = True
+    print('movedTo', curI, curJ)
 
 
 def choiceArray():  # how many cards are you choosing?
@@ -210,26 +225,28 @@ def input():
             elif info.dwPOV == 27000:
                 moveLeftMatrix()
         
-        if btns[1]:   # Croce
+        if btns[1]:   # Cross
             if(win32api.GetAsyncKeyState(0x01) < 0):
                 pyautogui.mouseUp()
             else:
                 pyautogui.click()
 
 
-        if btns[0]:   # Quadrato
+        if btns[0]:   # Square
             if curI == 6: #from hand
                 pyautogui.dragRel(0, -400, 0.2, button='left')
-                keepCursorOnCard = True
+                keepCursorOnCard = gameMatrix[curI][curJ].id
             elif curI == 5:  # from board
                 # check if the enemy is attacking, to give choice on where to defense
                 if len(gameMatrix[2]) > len(gameMatrix[4]):
                     pyautogui.mouseDown()  # keep the mouse clicked, to choose where to put the card
                     pyautogui.moveTo(gameMatrix[2][math.floor(len(gameMatrix[2])/2)].x, 1080-450, 0.1)
+                    keepCursorOnCard = gameMatrix[curI][curJ].id
                 else:
                     pyautogui.mouseDown()
                     pyautogui.moveRel(0, -200, 0.1)
                     pyautogui.mouseUp()
+                    keepCursorOnCard = gameMatrix[curI][curJ].id
             elif curI == 1:
                 # check if i am attacking, to select vulnerable enemies
                 if len(gameMatrix[4]) > len(gameMatrix[2]):
@@ -237,24 +254,29 @@ def input():
                     pyautogui.moveTo(gameMatrix[4][math.floor(len(gameMatrix[4])/2)].x, 1080-690, 0.1)
                 
 
-        if btns[3]:   # Triangolo
+        if btns[3]:   # Triangle
             pyautogui.moveTo(1670, 540)
             pyautogui.click()
             toogleMatrix()
 
-        if btns[2]:   # Cerchio
-            if abs(pyautogui.position().y - height/2) < 20:
+        if btns[2]:   # Circle
+            if curI == 3:
                 pyautogui.mouseDown()
                 pyautogui.moveTo(pyautogui.position().x, 1000, 0.1)
                 pyautogui.mouseUp()
-                toogleMatrix()
-            
+                keepCursorOnCard = gameMatrix[curI][curJ].id
+            elif curI == 2:
+                pyautogui.mouseDown()
+                pyautogui.moveRel(0, -250, 0.1)
+                pyautogui.mouseUp()
+                keepCursorOnCard = gameMatrix[curI][curJ].id
+            elif curI == 4:
+                pyautogui.mouseDown()
+                pyautogui.moveRel(0, 250, 0.1)
+                pyautogui.mouseUp()
+                keepCursorOnCard = gameMatrix[curI][curJ].id
 
-        if len(btns) > 12:
-            if btns[12]:
-                toogleMatrix()
 
- 
 DELAY = 1/30 #30 inputs per second (except it takes a bit to process every input so it's less than 30)
 
 num = joystickapi.joyGetNumDevs()
@@ -274,18 +296,16 @@ _thread.start_new_thread(getGameData, ())
 
 run = ret
 move = True
-keepCursorOnCard = False
+keepCursorOnCard = -1
 
 #----------------------------------------------------------------------------------------------#
 while run:
     time.sleep(DELAY)
 
     input()
-    if(keepCursorOnCard):
-        moveCursorToId(gameMatrix[curI][curJ])
     if(move):
         if (curI, curJ) != (-1, -1):
-            print(gameMatrix[curI][curJ].x, ' - ', 1080 - gameMatrix[curI][curJ].y)
+            #print(gameMatrix[curI][curJ].x, ' - ', 1080 - gameMatrix[curI][curJ].y)
             pyautogui.moveTo(gameMatrix[curI][curJ].x, 1080 - gameMatrix[curI][curJ].y)
         else:
             pyautogui.moveTo(1918, 1078)
