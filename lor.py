@@ -1,4 +1,5 @@
 import _thread
+import copy
 import json
 import math
 import msvcrt
@@ -13,16 +14,30 @@ import joystickapi
 pyautogui.FAILSAFE = False
 
 gameMatrix = [[],[],[],[],[],[],[]]
+newMatrix = [[], [], [], [], [], [], []]
 width, height = 1920, 1080
 curI, curJ = -1, -1   #joystick cursor current position in the matrix
 
+
+def equalsMat(a, b):
+    for i in range(len(a)):
+        if len(a[i]) != len(b[i]):
+            return False
+        for j in range(len(a[i])):
+            if a[i][j] != b[i][j]:
+                return False
+    return True
+
 class Point:
-  def __init__(self, x, y, id):
-    self.x = x
-    self.y = y
-    self.id = id
-  def __repr__(self):
-    return str(self.x)+' '+str(self.y)+' '+str(self.id)+'\n'
+    def __init__(self, x, y, id):
+        self.x = x
+        self.y = y
+        self.id = id
+    def __repr__(self):
+        return str(self.x)+' '+str(self.y)+' '+str(self.id)+'\n'
+    def __eq__(self, other):
+        return self.x == other.x and self.y == other.y and self.id == other.id
+
 
 def handHovering():
     return height - pyautogui.position().y < 90 and pyautogui.position().x < 1700 and pyautogui.position().x > 220
@@ -34,7 +49,7 @@ def handCoord(card):
     return Point(card['TopLeftX']+card['Width']/4, 40, card['CardID'])
 
 def getGameData():
-    global gameData, gameMatrix, keepCursorOnCard
+    global gameData, gameMatrix, keepCursorOnCard, newMatrix
     while True:
         gameData = json.loads(urllib.request.urlopen("http://localhost:21337/positional-rectangles").read())
         print('--- game data ---')
@@ -65,24 +80,20 @@ def getGameData():
             else:
                 trashedRect += 1
         
-        if trashedRect > 2 and not handHovering():
+        #if trashedRect > 2 and not handHovering():
             #raise Exception("A rectangle is not in a section")
-            print('BIG ERROR!!! one or more cards was not in normal spots, retrying to read the data dragon api')
-            return
+            #print('BIG ERROR!!! one or more cards was not in normal spots, retrying to read the data dragon api')
+            #continue
 
         for a in newMatrix:
             a.sort(key=lambda x: x.x)
         #print(newMatrix)
 
-        gameMatrix = newMatrix
-
-        if(keepCursorOnCard != -1 and not win32api.GetAsyncKeyState(0x01) < 0):
-            moveCursorToId(keepCursorOnCard)
-            keepCursorOnCard = -1
 
 
 def moveCursorToId(nextCardId):
     global curI, curJ, move
+    curI, curJ = -1, -1
     for i, row in enumerate(gameMatrix):
         for j, c in enumerate(row):
             if c.id == nextCardId:
@@ -310,3 +321,13 @@ while run:
         else:
             pyautogui.moveTo(1918, 1078)
         move = False
+
+
+    #to avoid error, newMatrix get fetched asyncronously and game matrix copies it syncronously
+    #print(not equalsMat(gameMatrix, newMatrix))
+    if gameMatrix != newMatrix:
+        gameMatrix = copy.deepcopy(newMatrix)
+        if(keepCursorOnCard != -1 and not win32api.GetAsyncKeyState(0x01) < 0):
+            moveCursorToId(keepCursorOnCard)
+            keepCursorOnCard = -1
+
