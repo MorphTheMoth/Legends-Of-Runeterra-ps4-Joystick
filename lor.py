@@ -1,4 +1,3 @@
-import _thread
 import json
 import math
 import msvcrt
@@ -19,13 +18,26 @@ lostCards = []
 width, height = 1920, 1080
 curI, curJ = -1, -1   #joystick cursor current position in the matrix
 
+
+def equalsMat(a, b):
+    for i in range(len(a)):
+        if len(a[i]) != len(b[i]):
+            return False
+        for j in range(len(a[i])):
+            if a[i][j] != b[i][j]:
+                return False
+    return True
+
 class Point:
-  def __init__(self, x, y, id):
-    self.x = x
-    self.y = y
-    self.id = id
-  def __repr__(self):
-    return str(self.x)+' '+str(self.y)+' '+str(self.id)+'\n'
+    def __init__(self, x, y, id):
+        self.x = x
+        self.y = y
+        self.id = id
+    def __repr__(self):
+        return str(self.x)+' '+str(self.y)+' '+str(self.id)+'\n'
+    def __eq__(self, other):
+        return self.x == other.x and self.y == other.y and self.id == other.id
+
 
 def handHovering():
     return height - pyautogui.position().y < 90 and pyautogui.position().x < 1700 and pyautogui.position().x > 220
@@ -327,5 +339,4 @@ keepCursorOnCard = -1
 while run:
     time.sleep(DELAY)
     input()
-    
 
