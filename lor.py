@@ -2,8 +2,10 @@ import _thread
 import json
 import math
 import msvcrt
+import threading
 import time
 import urllib.request
+from datetime import datetime
 
 import pyautogui
 import win32api
@@ -13,6 +15,7 @@ import joystickapi
 pyautogui.FAILSAFE = False
 
 gameMatrix = [[],[],[],[],[],[],[]]
+lostCards = []
 width, height = 1920, 1080
 curI, curJ = -1, -1   #joystick cursor current position in the matrix
 
@@ -33,18 +36,36 @@ def enemyHandCoord(card):
 def handCoord(card):
     return Point(card['TopLeftX']+card['Width']/4, 40, card['CardID'])
 
+def checkChoice():
+    for card in gameData['Rectangles']:
+        if card['Height'] < 140:
+            continue
+        if card['TopLeftY'] > height / 2 and card['TopLeftY']-card['Height'] < height / 2:
+            return True
+    return False
+
+def moveToMatrix(i, j):
+    global curI, curJ, gameMatrix
+    curI, curJ = i, j
+    if (curI, curJ) != (-1, -1):
+        pyautogui.moveTo(gameMatrix[curI][curJ].x, 1080 - gameMatrix[curI][curJ].y)
+    else:
+        pyautogui.moveTo(1918, 1078)
+
 def getGameData():
-    global gameData, gameMatrix, keepCursorOnCard
+    global gameData, gameMatrix, keepCursorOnCard, lostCards
     while True:
+        before = datetime.now()
         gameData = json.loads(urllib.request.urlopen("http://localhost:21337/positional-rectangles").read())
-        print('--- game data ---')
+        print('--- game data --- ', datetime.now() - before, ' ---')
 
         if(handHovering()):
             newMatrix = [[], [], [], [], [], [], gameMatrix[6]]
         else:
             newMatrix = [[], [], [], [], [], [], []]
+        lostCards = []
         # -- rectangles matrix
-        trashedRect = 0
+        #trashedRect = 0
         for card in gameData['Rectangles']:
             if(card['CardCode'] == 'face'):
                 continue
@@ -63,13 +84,8 @@ def getGameData():
             elif(card['TopLeftY']<150 and not handHovering()):
                 newMatrix[6].append(handCoord(card))
             else:
-                trashedRect += 1
+                lostCards.append(coord(card))
         
-        if trashedRect > 2 and not handHovering():
-            #raise Exception("A rectangle is not in a section")
-            print('BIG ERROR!!! one or more cards was not in normal spots, retrying to read the data dragon api')
-            return
-
         for a in newMatrix:
             a.sort(key=lambda x: x.x)
         #print(newMatrix)
@@ -77,20 +93,25 @@ def getGameData():
         gameMatrix = newMatrix
 
         if(keepCursorOnCard != -1 and not win32api.GetAsyncKeyState(0x01) < 0):
-            moveCursorToId(keepCursorOnCard)
-            keepCursorOnCard = -1
+            if moveCursorToId(keepCursorOnCard): #True if the card is in the matrix, False if its in the animation
+                keepCursorOnCard = -1
 
 
 def moveCursorToId(nextCardId):
-    global curI, curJ, move
+    global lostCards
+    for lost in lostCards:
+        if nextCardId == lost.id:
+            pyautogui.moveTo(lost.x, lost.y)
+            return False
+
     for i, row in enumerate(gameMatrix):
         for j, c in enumerate(row):
             if c.id == nextCardId:
-                curI = i
-                curJ = j
-    move = True
-    print('movedTo', curI, curJ)
-
+                moveToMatrix(i, j)
+                return True
+    
+    print('BIG ERROR A CARD DISAPPEARED, WTF RIOT')
+    return False
 
 def choiceArray():  # how many cards are you choosing?
     maxH = 0  # maxHeight
@@ -102,13 +123,7 @@ def choiceArray():  # how many cards are you choosing?
         elif (card['Height'] == maxH):
             arr.append(coord(card))
     return arr
-def checkChoice():
-    for card in gameData['Rectangles']:
-        if card['Height'] < 140:
-            continue
-        if (card['TopLeftY'] > height / 2 and card['TopLeftY']-card['Height'] < height / 2):
-            return True
-    return False
+
 
 def moveUpMatrix():
     global curI, curJ
@@ -149,7 +164,7 @@ def toogleMatrix():
 
 
 def input():
-    global run, ret, curI, curJ, move, caps, id, keepCursorOnCard
+    global run, ret, curI, curJ, caps, id, keepCursorOnCard
     if msvcrt.kbhit() and msvcrt.getch() == chr(27).encode(): # detect ESC (panic button)
         run = False
 
@@ -210,7 +225,6 @@ def input():
                     pyautogui.mouseUp()
                 return
 
-            move = True
             if (curI, curJ) == (-1, -1):
                 curI, curJ = 7, 0   # will be decremented to 6, 0
                 moveUpMatrix()
@@ -224,6 +238,8 @@ def input():
                 moveDownMatrix()
             elif info.dwPOV == 27000:
                 moveLeftMatrix()
+            
+            moveToMatrix(curI, curJ)
         
         if btns[1]:   # Cross
             if(win32api.GetAsyncKeyState(0x01) < 0):
@@ -233,20 +249,20 @@ def input():
 
 
         if btns[0]:   # Square
-            if curI == 6: #from hand
-                pyautogui.dragRel(0, -400, 0.2, button='left')
+            if curI == 6:  # from hand
                 keepCursorOnCard = gameMatrix[curI][curJ].id
+                pyautogui.dragRel(0, -400, 0.2, button='left')
             elif curI == 5:  # from board
                 # check if the enemy is attacking, to give choice on where to defense
                 if len(gameMatrix[2]) > len(gameMatrix[4]):
+                    keepCursorOnCard = gameMatrix[curI][curJ].id
                     pyautogui.mouseDown()  # keep the mouse clicked, to choose where to put the card
                     pyautogui.moveTo(gameMatrix[2][math.floor(len(gameMatrix[2])/2)].x, 1080-450, 0.1)
-                    keepCursorOnCard = gameMatrix[curI][curJ].id
                 else:
+                    keepCursorOnCard = gameMatrix[curI][curJ].id
                     pyautogui.mouseDown()
                     pyautogui.moveRel(0, -200, 0.1)
                     pyautogui.mouseUp()
-                    keepCursorOnCard = gameMatrix[curI][curJ].id
             elif curI == 1:
                 # check if i am attacking, to select vulnerable enemies
                 if len(gameMatrix[4]) > len(gameMatrix[2]):
@@ -261,20 +277,20 @@ def input():
 
         if btns[2]:   # Circle
             if curI == 3:
+                keepCursorOnCard = gameMatrix[curI][curJ].id
                 pyautogui.mouseDown()
                 pyautogui.moveTo(pyautogui.position().x, 1000, 0.1)
                 pyautogui.mouseUp()
-                keepCursorOnCard = gameMatrix[curI][curJ].id
             elif curI == 2:
+                keepCursorOnCard = gameMatrix[curI][curJ].id
                 pyautogui.mouseDown()
                 pyautogui.moveRel(0, -250, 0.1)
                 pyautogui.mouseUp()
-                keepCursorOnCard = gameMatrix[curI][curJ].id
             elif curI == 4:
+                keepCursorOnCard = gameMatrix[curI][curJ].id
                 pyautogui.mouseDown()
                 pyautogui.moveRel(0, 250, 0.1)
                 pyautogui.mouseUp()
-                keepCursorOnCard = gameMatrix[curI][curJ].id
 
 
 DELAY = 1/30 #30 inputs per second (except it takes a bit to process every input so it's less than 30)
@@ -292,21 +308,24 @@ else:
     print("no gamepad detected")
 
 gameData = json.loads(urllib.request.urlopen("http://localhost:21337/positional-rectangles").read())
-_thread.start_new_thread(getGameData, ())
+
+N_THREAD = 8
+#start N_THREAD thread because the data dragon api from LOR has a 2 seconds cooldown before responding to the same process
+
+th = [None] * N_THREAD #8 length array
+for i in range(N_THREAD):
+    th[i] = threading.Thread(target=getGameData)
+for t in th:
+    time.sleep(2/N_THREAD)
+    t.start()
+
 
 run = ret
-move = True
 keepCursorOnCard = -1
 
 #----------------------------------------------------------------------------------------------#
 while run:
     time.sleep(DELAY)
-
     input()
-    if(move):
-        if (curI, curJ) != (-1, -1):
-            #print(gameMatrix[curI][curJ].x, ' - ', 1080 - gameMatrix[curI][curJ].y)
-            pyautogui.moveTo(gameMatrix[curI][curJ].x, 1080 - gameMatrix[curI][curJ].y)
-        else:
-            pyautogui.moveTo(1918, 1078)
-        move = False
+    
+
