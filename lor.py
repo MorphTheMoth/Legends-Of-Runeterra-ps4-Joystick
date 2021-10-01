@@ -1,3 +1,5 @@
+#make thread restart after a bit or delay them  properly odk how
+
 import json
 import math
 import msvcrt
@@ -29,10 +31,12 @@ def equalsMat(a, b):
     return True
 
 class Point:
-    def __init__(self, x, y, id):
+    def __init__(self, x, y, id, cardCode, localPlayer):
         self.x = x
         self.y = y
         self.id = id
+        self.cardCode = cardCode
+        self.localPlayer = localPlayer
     def __repr__(self):
         return str(self.x)+' '+str(self.y)+' '+str(self.id)+'\n'
     def __eq__(self, other):
@@ -42,11 +46,20 @@ class Point:
 def handHovering():
     return height - pyautogui.position().y < 90 and pyautogui.position().x < 1700 and pyautogui.position().x > 220
 def coord(card):
-    return Point(card['TopLeftX']+card['Width']/2, card['TopLeftY']-card['Height']/2, card['CardID'])
+    return Point(card['TopLeftX']+card['Width']/2, card['TopLeftY']-card['Height']/2, card['CardID'], card['CardCode'], card['LocalPlayer'])
 def enemyHandCoord(card):
-    return Point(card['TopLeftX']+card['Width']/2, 1065, card['CardID'])
+    return Point(card['TopLeftX']+card['Width']/2, 1065, card['CardID'], card['CardCode'], card['LocalPlayer'])
 def handCoord(card):
-    return Point(card['TopLeftX']+card['Width']/4, 40, card['CardID'])
+    return Point(card['TopLeftX']+card['Width']/4, 40, card['CardID'], card['CardCode'], card['LocalPlayer'])
+
+def choiceNumber():
+    n = 0
+    for card in gameData['Rectangles']:
+        if card['Height'] < 140:
+            continue
+        if card['TopLeftY'] > height / 2 and card['TopLeftY']-card['Height'] < height / 2:
+            n += 1
+    return n
 
 def checkChoice():
     for card in gameData['Rectangles']:
@@ -66,10 +79,10 @@ def moveToMatrix(i, j):
 
 def getGameData():
     global gameData, gameMatrix, keepCursorOnCard, lostCards
+    theoricalTime = 0
+    startTime = datetime.now()
     while True:
-        before = datetime.now()
         gameData = json.loads(urllib.request.urlopen("http://localhost:21337/positional-rectangles").read())
-        print('--- game data --- ', datetime.now() - before, ' ---')
 
         if(handHovering()):
             newMatrix = [[], [], [], [], [], [], gameMatrix[6]]
@@ -80,12 +93,12 @@ def getGameData():
         #trashedRect = 0
         for card in gameData['Rectangles']:
             if(card['CardCode'] == 'face'):
-                continue
-            if(card['TopLeftY'] > 1030):
+                lostCards.append(coord(card))
+            elif(card['TopLeftY'] > 1030):
                 newMatrix[0].append(enemyHandCoord(card))
             elif(card['Height']<180 and card['TopLeftY']>950 and card['TopLeftY']<1000):
                 newMatrix[1].append(coord(card))
-            elif(card['Height']<180 and card['TopLeftY'] > 780 and card['TopLeftY'] < 830):
+            elif(card['Height']<180 and card['TopLeftY']>780 and card['TopLeftY']<830):
                 newMatrix[2].append(coord(card))
             elif(card['Height']<120 and card['Height']>110 and card['Width']<120 and card['Width']>110):
                 newMatrix[3].append(coord(card))
@@ -97,20 +110,30 @@ def getGameData():
                 newMatrix[6].append(handCoord(card))
             else:
                 lostCards.append(coord(card))
-        
         for a in newMatrix:
             a.sort(key=lambda x: x.x)
-        #print(newMatrix)
-
         gameMatrix = newMatrix
-
         if(keepCursorOnCard != -1 and not win32api.GetAsyncKeyState(0x01) < 0):
             if moveCursorToId(keepCursorOnCard): #True if the card is in the matrix, False if its in the animation
                 keepCursorOnCard = -1
 
 
+        theoricalTime += 4 #adds 4 seconds to the time it should be
+        actualTime = datetime.now() - startTime #finds out how much time actually passed
+        time.sleep(theoricalTime - (actualTime.seconds + actualTime.microseconds/1000000))  #waits to stay in track witht the theorical time, and doing so all the threads stay synchronized
+        
+        #ttime = datetime.now() - startTime  #just output
+        #print('\n--- game data --- ', (ttime.seconds + ttime.microseconds/1000000) - theoricalTime, ' ---')
+
+
+
+
 def moveCursorToId(nextCardId):
     global lostCards
+
+    if choiceNumber(): #while a card like conchologist is being played, he is still in the animation while you choose, i return so that after you choose, the cursor will still move into him
+        return
+
     for lost in lostCards:
         if nextCardId == lost.id:
             pyautogui.moveTo(lost.x, lost.y)
@@ -134,6 +157,7 @@ def choiceArray():  # how many cards are you choosing?
             arr = [coord(card)]
         elif (card['Height'] == maxH):
             arr.append(coord(card))
+    arr.sort(key=lambda x: x.x)
     return arr
 
 
@@ -165,7 +189,7 @@ def moveRightMatrix():
         curJ += 1
 def moveLeftMatrix():
     global curI, curJ
-    if curJ == 0:
+    if curJ < 0:
         toogleMatrix()
     else:
         curJ -= 1
@@ -174,6 +198,15 @@ def toogleMatrix():
     global curI, curJ
     curI, curJ = -1, -1
 
+def allyNexusPoint():
+    for l in lostCards:
+        if l.cardCode == 'face' and l.localPlayer == True:
+            return l
+
+def enemyNexusPoint():
+    for l in lostCards:
+        if l.cardCode == 'face' and l.localPlayer == False:
+            return l
 
 def input():
     global run, ret, curI, curJ, caps, id, keepCursorOnCard
@@ -187,7 +220,7 @@ def input():
         if info.dwButtons:
             print("buttons: ", btns)
 
-        if info.dwPOV != 65535:
+        if info.dwPOV != 65535: #arrows
             print(info.dwPOV)
             # check if there is a choice to make
             if checkChoice():
@@ -237,21 +270,32 @@ def input():
                     pyautogui.mouseUp()
                 return
 
-            if (curI, curJ) == (-1, -1):
+
+
+            if (curI, curJ) == (-1, -1): # if i click anything while being on nothing, go to my hand
                 curI, curJ = 7, 0   # will be decremented to 6, 0
                 moveUpMatrix()
-            elif info.dwPOV == 0:
+            elif info.dwPOV == 0: #up
                 if(curI == 6):
-                    pyautogui.moveTo(1919, 1079)
+                    pyautogui.moveTo(1919, 1079) #make the hand stop covering the board
                 moveUpMatrix()
-            elif info.dwPOV == 9000:
+            elif info.dwPOV == 9000:  #right
                 moveRightMatrix()
-            elif info.dwPOV == 18000:
+            elif info.dwPOV == 18000: #down
                 moveDownMatrix()
-            elif info.dwPOV == 27000:
-                moveLeftMatrix()
-            
+            elif info.dwPOV == 27000: #left
+                if curJ == 0: # move to the nexus
+                    if curI > 3:
+                        pyautogui.moveTo( allyNexusPoint().x, 1080-allyNexusPoint().y )
+                    elif curI < 3:
+                        pyautogui.moveTo( enemyNexusPoint().x, 1080-enemyNexusPoint().y )
+                    curJ = -1
+                    return
+                else:
+                    moveLeftMatrix()
+
             moveToMatrix(curI, curJ)
+            
         
         if btns[1]:   # Cross
             if(win32api.GetAsyncKeyState(0x01) < 0):
@@ -305,7 +349,6 @@ def input():
                 pyautogui.mouseUp()
 
 
-DELAY = 1/30 #30 inputs per second (except it takes a bit to process every input so it's less than 30)
 
 num = joystickapi.joyGetNumDevs()
 print('gamepad connected = ', num)
@@ -319,24 +362,28 @@ for id in range(num):
 else:
     print("no gamepad detected")
 
-gameData = json.loads(urllib.request.urlopen("http://localhost:21337/positional-rectangles").read())
-
-N_THREAD = 8
-#start N_THREAD thread because the data dragon api from LOR has a 2 seconds cooldown before responding to the same process
-
-th = [None] * N_THREAD #8 length array
-for i in range(N_THREAD):
-    th[i] = threading.Thread(target=getGameData)
-for t in th:
-    time.sleep(2/N_THREAD)
-    t.start()
-
 
 run = ret
 keepCursorOnCard = -1
+gameData = json.loads(urllib.request.urlopen("http://localhost:21337/positional-rectangles").read())
+
+# 30 inputs per second (except it takes a bit to process every input so it's less than 30)
+DELAY = 1/30
+
+#start N_THREAD thread because the data dragon api from LOR has a 2 seconds cooldown before responding to the same process
+#but i made it a 4 seconds between each request, to keep the different threads synchronized
+N_THREAD = 16
+
+
+
+th = [None] * N_THREAD   #N_THREAD length array
+for i in range(N_THREAD):
+    th[i] = threading.Thread(target=getGameData)
+for t in th:
+    time.sleep(4/N_THREAD)
+    t.start()
 
 #----------------------------------------------------------------------------------------------#
 while run:
     time.sleep(DELAY)
     input()
-
