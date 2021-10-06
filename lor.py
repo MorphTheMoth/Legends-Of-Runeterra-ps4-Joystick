@@ -1,18 +1,15 @@
+import copy
 import json
 import math
-import msvcrt
 import threading
 import time
 import urllib.request
 from datetime import datetime
 
-import pyautogui
 import win32api
 from win32con import *
 
 import joystickapi
-
-pyautogui.FAILSAFE = False
 
 gameMatrix = [[],[],[],[],[],[],[]]
 newMatrix = [[],[],[],[],[],[],[]]
@@ -20,6 +17,45 @@ lostCards = []
 width, height = 1920, 1080
 curI, curJ = -1, -1   #joystick cursor current position in the matrix
 LSTICK_SPEED = 27
+
+
+#i made these depending on each other to change less code when moving to another OS
+def getMouseX():
+    x, y = win32api.GetCursorPos()
+    return x
+def getMouseY():
+    x, y = win32api.GetCursorPos()
+    return y
+
+def moveMouseTo(x, y):
+    win32api.SetCursorPos((int(x), int(y)))
+def moveMouseRel(x, y):
+    moveMouseTo(x + getMouseX(), y + getMouseY())
+
+def isLeftClicked():
+    return win32api.GetAsyncKeyState(0x01) < 0
+
+def moveWheel(dir):
+    win32api.mouse_event(MOUSEEVENTF_WHEEL, getMouseX(), getMouseY(), dir, 0)
+
+def mouseClick():
+    mouseDown()
+    mouseUp()
+
+def mouseDown():
+    win32api.mouse_event(MOUSEEVENTF_LEFTDOWN, getMouseX(), getMouseY())
+def mouseUp():
+    win32api.mouse_event(MOUSEEVENTF_LEFTUP, getMouseX(), getMouseY())
+
+def mouseDragRel(x, y):
+    mouseDragTo(x + getMouseX(), y + getMouseY())
+def mouseDragTo(x, y):
+    mouseDown()
+    time.sleep(0.1)
+    moveMouseTo(x, y)
+    time.sleep(0.1)
+    mouseUp()
+
 
 class Point:
     def __init__(self, x, y, id, cardCode, localPlayer):
@@ -35,7 +71,7 @@ class Point:
 
 
 def handHovering():
-    return height - pyautogui.position().y < 90 and pyautogui.position().x < 1700 and pyautogui.position().x > 220
+    return height - getMouseY() < 90 and getMouseX() < 1700 and getMouseX() > 220
 def coord(card):
     return Point(card['TopLeftX']+card['Width']/2, card['TopLeftY']-card['Height']/2, card['CardID'], card['CardCode'], card['LocalPlayer'])
 def enemyHandCoord(card):
@@ -81,10 +117,6 @@ def getGameData():
             for a in newMatrix:
                 a.sort(key=lambda x: x.x)
 
-            if(keepCursorOnCard != -1 and not win32api.GetAsyncKeyState(0x01) < 0):
-                # True if the card is in the matrix, False if its in the animation
-                if moveCursorToId(keepCursorOnCard):
-                    keepCursorOnCard = -1
 
             theoricalTime += 4  # adds 4 seconds to the time it should be
             # finds out how much time actually passed
@@ -136,9 +168,9 @@ def moveToMatrix(i, j):
     global curI, curJ, gameMatrix
     curI, curJ = i, j
     if (curI, curJ) != (-1, -1):
-        pyautogui.moveTo(gameMatrix[curI][curJ].x, 1080 - gameMatrix[curI][curJ].y)
+        moveMouseTo(gameMatrix[curI][curJ].x, 1080 - gameMatrix[curI][curJ].y)
     else:
-        pyautogui.moveTo(1918, 1078)
+        moveMouseTo(1918, 1078)
 
 
 def moveCursorToId(nextCardId):
@@ -149,7 +181,7 @@ def moveCursorToId(nextCardId):
 
     for lost in lostCards:
         if nextCardId == lost.id:
-            pyautogui.moveTo(lost.x, lost.y)
+            moveMouseTo(lost.x, lost.y)
             return False
 
     for i, row in enumerate(gameMatrix):
@@ -163,6 +195,7 @@ def moveCursorToId(nextCardId):
 
 def moveUpMatrix():
     global curI, curJ
+
     if curI <= 0:
         toogleMatrix()
         return
@@ -206,10 +239,10 @@ def enemyNexusPoint():
         if l.cardCode == 'face' and l.localPlayer == False:
             return l
 
-#runs as a different thread
+#left stick act as a mouse, also runs as a different thread
 def LStickMouse():
     global id, ret
-    wheelCoolDown = clickCoolDown = 0
+    clickCoolDown = 0
     while(True):
         time.sleep(1/100)
         if len(gameData['Rectangles']) != 0:
@@ -229,24 +262,18 @@ def LStickMouse():
 
         #print('x: ', LeftStick.x, '    y: ', LeftStick.y)
         if abs(LeftStick.x) > 0.1 or abs(LeftStick.y) > 0.1:
-            x, y = win32api.GetCursorPos()
-            win32api.SetCursorPos((int(x + LeftStick.x * LSTICK_SPEED), int(y + LeftStick.y * LSTICK_SPEED)))
+            moveMouseRel(LeftStick.x * LSTICK_SPEED, LeftStick.y * LSTICK_SPEED)
         
         if abs(RightStick.y) > 0.5:
-            x, y = win32api.GetCursorPos()
-            win32api.mouse_event(MOUSEEVENTF_WHEEL, x, y, -1*int(round(RightStick.y)), 0)
+            moveWheel(-1*int(round(RightStick.y)))
 
         if len(gameData['Rectangles']) == 0:
-            if(clickCoolDown == 20):
+            if(clickCoolDown == 10):
                 if btns[2]:   # Circle
-                    x, y = win32api.GetCursorPos()
-                    win32api.mouse_event(MOUSEEVENTF_RIGHTDOWN, x, y)
-                    win32api.mouse_event(MOUSEEVENTF_RIGHTUP, x, y)
+                    mouseClick()
                     clickCoolDown = 0
                 if btns[1]:   # Cross
-                    x, y = win32api.GetCursorPos()
-                    win32api.mouse_event(MOUSEEVENTF_LEFTDOWN, x, y)
-                    win32api.mouse_event(MOUSEEVENTF_LEFTUP, x, y)
+                    mouseClick()
                     clickCoolDown = 0
             else:
                 clickCoolDown += 1
@@ -254,7 +281,7 @@ def LStickMouse():
 def input():
     global run, ret, curI, curJ, caps, id, keepCursorOnCard
     if len(gameData['Rectangles']) == 0: #if not in game
-        return
+        return True #returns true to save some processing power
 
     ret, info = joystickapi.joyGetPosEx(id)
     
@@ -271,24 +298,23 @@ def input():
                 chArr = choiceArray() # ch = choice
                 currCh = -1
                 for i, ch in enumerate(chArr):
-                    if abs(ch.x - pyautogui.position().x) < 20:
+                    if abs(ch.x - getMouseX()) < 20:
                         currCh = i
                         break
 
                 if currCh == -1: #if you are not hovering any card in the choice
                     if info.dwPOV == 27000 or info.dwPOV == 0 or info.dwPOV == 18000 or info.dwPOV == 9000:
-                        pyautogui.moveTo(chArr[math.floor(len(chArr)/2)].x, chArr[math.floor(len(chArr)/2)].y, 0.1)
+                        moveMouseTo(chArr[math.floor(len(chArr)/2)].x, chArr[math.floor(len(chArr)/2)].y)
                 elif info.dwPOV == 9000:
                     if currCh != len(chArr)-1:
-                        pyautogui.moveTo(chArr[currCh+1].x, chArr[currCh+1].y)
+                        moveMouseTo(chArr[currCh+1].x, chArr[currCh+1].y)
                 elif info.dwPOV == 27000:
                     if currCh != 0:
-                        pyautogui.moveTo(chArr[currCh-1].x, chArr[currCh-1].y)
-                return
+                        moveMouseTo(chArr[currCh-1].x, chArr[currCh-1].y)
+                return True
 
-            # if the enemy is attacking, or if i am attacking () to give choice on where to defense
-            # len(gameMatrix[2]) > len(gameMatrix[4]) and
-            if win32api.GetAsyncKeyState(0x01) < 0: #if left click is being clicked
+            # if the enemy is attacking, or if i am attacking. it gives a choice on where to defende
+            if isLeftClicked(): #if left click is being clicked
                 if len(gameMatrix[2]) > len(gameMatrix[4]):
                     atk = 2 #whos attacking
                     lineY = 450 #where is the line of defense
@@ -297,21 +323,21 @@ def input():
                     lineY = 690
                 if info.dwPOV == 9000:  # right
                     for i, p in enumerate(gameMatrix[atk]):
-                        if( abs(p.x - pyautogui.position().x) < 20 and i != len(gameMatrix[atk])-1 ):
-                            pyautogui.moveTo(gameMatrix[atk][i+1].x, 1080-lineY, 0.1)
+                        if( abs(p.x - getMouseX()) < 20 and i != len(gameMatrix[atk])-1 ):
+                            moveMouseTo(gameMatrix[atk][i+1].x, 1080-lineY)
                             break
                 elif info.dwPOV == 27000:  # left
                     for i, p in enumerate(gameMatrix[atk]):
-                        if( abs(p.x - pyautogui.position().x) < 20 and i != 0 ):
-                            pyautogui.moveTo(gameMatrix[atk][i-1].x, 1080-lineY, 0.1)
+                        if( abs(p.x - getMouseX()) < 20 and i != 0 ):
+                            moveMouseTo(gameMatrix[atk][i-1].x, 1080-lineY)
                             break
                 elif info.dwPOV == 18000 and atk == 2: # down
-                    pyautogui.moveRel(0, 250, 0.1)
-                    pyautogui.mouseUp()
+                    moveMouseRel(0, 250)
+                    mouseUp()
                 elif info.dwPOV == 0 and atk == 4:  # up
-                    pyautogui.moveRel(0, -250, 0.1)
-                    pyautogui.mouseUp()
-                return
+                    moveMouseRel(0, -250)
+                    mouseUp()
+                return True
 
 
             if (curI, curJ) == (-1, -1): # if i click anything while being on nothing, go to my hand
@@ -319,82 +345,80 @@ def input():
                 moveUpMatrix()
 
             elif info.dwPOV == 0: #up
-                if(curI == 6): pyautogui.moveTo(1919, 1079) #make the hand stop covering the board
+                if(curI == 6): moveMouseTo(1919, 1079), time.sleep(0.1) #make the hand stop covering the board
                 moveUpMatrix()
 
             elif info.dwPOV == 9000:  #right
-                if(curI == 0): pyautogui.moveTo(1919, 1079) #make the enemy hand stop covering the board
+                if(curI == 0): moveMouseTo(1919, 1079), time.sleep(0.1) #make the enemy hand stop covering the enemy hand
                 moveRightMatrix()
 
             elif info.dwPOV == 18000: #down
-                if(curI == 0): pyautogui.moveTo(1919, 1079) #make the enemy hand stop covering the board
+                if(curI == 0): moveMouseTo(1919, 1079), time.sleep(0.1) #make the enemy hand stop covering the board
                 moveDownMatrix()
 
             elif info.dwPOV == 27000:  # left
-                if(curI == 0): pyautogui.moveTo(1919, 1079) #make the hand stop covering the board
+                if(curI == 0): moveMouseTo(1919, 1079), time.sleep(0.1) #make the enemyhand stop covering the enemy hand
                 if curJ == 0: # move to the nexus
                     if curI > 3:
-                        pyautogui.moveTo( allyNexusPoint().x, 1080-allyNexusPoint().y )
+                        moveMouseTo( allyNexusPoint().x, 1080-allyNexusPoint().y )
                     elif curI < 3:
-                        pyautogui.moveTo( enemyNexusPoint().x, 1080-enemyNexusPoint().y )
+                        moveMouseTo( enemyNexusPoint().x, 1080-enemyNexusPoint().y )
                     curJ = -1
-                    return
+                    return True
                 else:
                     moveLeftMatrix()
 
             moveToMatrix(curI, curJ)
+            return True
             
         if btns[1]:   # Cross
-            if(win32api.GetAsyncKeyState(0x01) < 0):
-                pyautogui.mouseUp()
+            if(isLeftClicked()):
+                mouseUp()
             else:
-                pyautogui.click()
-
+                mouseClick()
+            return True
 
         if btns[0]:   # Square
             if curI == 6:  # from hand
                 keepCursorOnCard = gameMatrix[curI][curJ].id
-                pyautogui.dragRel(0, -400, 0.2, button='left')
+                mouseDragRel(0, -400)
             elif curI == 5:  # from board
                 # check if the enemy is attacking, to give choice on where to defense
                 if len(gameMatrix[2]) > len(gameMatrix[4]):
                     keepCursorOnCard = gameMatrix[curI][curJ].id
-                    pyautogui.mouseDown()  # keep the mouse clicked, to choose where to put the card
-                    pyautogui.moveTo(gameMatrix[2][math.floor(len(gameMatrix[2])/2)].x, 1080-450, 0.1)
+                    mouseDown()  # keep the mouse clicked, to choose where to put the card
+                    time.sleep(0.1)
+                    moveMouseTo(gameMatrix[2][math.floor(len(gameMatrix[2])/2)].x, 1080-450)
                 else: #i am attacking
                     keepCursorOnCard = gameMatrix[curI][curJ].id
-                    pyautogui.mouseDown()
-                    pyautogui.moveRel(0, -200, 0.1)
-                    pyautogui.mouseUp()
+                    mouseDragRel(0, -200)
             elif curI == 1:
                 # check if i am attacking, to select vulnerable enemies
                 if len(gameMatrix[4]) > len(gameMatrix[2]):
-                    pyautogui.mouseDown() #keep the mouse clicked, to choose where to put the card
-                    pyautogui.moveTo(gameMatrix[4][math.floor(len(gameMatrix[4])/2)].x, 1080-690, 0.1)
+                    mouseDown()  # keep the mouse clicked, to choose where to put the card
+                    time.sleep(0.1)
+                    moveMouseTo(gameMatrix[4][math.floor(len(gameMatrix[4])/2)].x, 1080-690)
+            return True
                 
-
         if btns[3]:   # Triangle
-            pyautogui.moveTo(1670, 540)
-            pyautogui.click()
+            moveMouseTo(1670, 540)
+            mouseClick()
             toogleMatrix()
+            return True
 
         if btns[2]:   # Circle
             if curI == 3:
                 keepCursorOnCard = gameMatrix[curI][curJ].id
-                pyautogui.mouseDown()
-                pyautogui.moveTo(pyautogui.position().x, 1000, 0.1)
-                pyautogui.mouseUp()
+                mouseDragTo(getMouseX(), 1000)
             elif curI == 2:
                 keepCursorOnCard = gameMatrix[curI][curJ].id
-                pyautogui.mouseDown()
-                pyautogui.moveRel(0, -250, 0.1)
-                pyautogui.mouseUp()
+                mouseDragRel(0, -250)
             elif curI == 4:
                 keepCursorOnCard = gameMatrix[curI][curJ].id
-                pyautogui.mouseDown()
-                pyautogui.moveRel(0, 250, 0.1)
-                pyautogui.mouseUp()
+                mouseDragRel(0, 250)
+            return True
 
+    return False
 
 
 num = joystickapi.joyGetNumDevs()
@@ -414,9 +438,9 @@ run = ret
 keepCursorOnCard = -1
 gameData = json.loads(urllib.request.urlopen("http://localhost:21337/positional-rectangles").read())
 
-# 30 inputs per second (except it takes a bit to process every input so it's less than 30)
-DELAY = 1/30
-
+# 6 inputs per second (except it takes a bit to process every input so it's less)
+DELAY = 1/10
+buttonPressed = False
 #start N_THREAD thread because the data dragon api from LOR has a 2 seconds cooldown before responding to the same process
 #but i made it a 4 seconds between each request, to keep the different threads synchronized
 N_THREAD = 16
@@ -433,6 +457,16 @@ for t in th:
 
 #----------------------------------------------------------------------------------------------#
 while run:
-    gameMatrix = newMatrix # gets the newMatrix asynchronously but only uses it synchronously, so it doesnt change while doing random instruction leading to crash
-    input()
-    time.sleep(DELAY)
+    gameMatrix = copy.deepcopy(newMatrix) # gets the newMatrix asynchronously but only uses it synchronously, so it doesnt change while doing random instruction leading to crash
+    
+    if(keepCursorOnCard != -1 and not isLeftClicked()):
+        # True if the card is in the matrix, False if its in the animation
+        if moveCursorToId(keepCursorOnCard):
+            keepCursorOnCard = -1
+            
+    if buttonPressed:  # if last cycle was an input, waits a cooldown, if it wasn't check for input
+        buttonPressed = False
+        time.sleep(DELAY)
+    else:
+        buttonPressed = input()
+        time.sleep(0.03)
