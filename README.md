@@ -3,7 +3,7 @@
 i tried to make a python script that would transform a joystick input into mouse and keyboard inputs, to play [Legends Of Runeterra](https://playruneterra.com/it-it/); a card game made by Riot Games.
 
 
-it works pretty well, the only problem is that i noticed that if i approached the problem in a completely different way, it would have been both better to use and easier to implement, so i lost interest in continuing it ¯\_(ツ)_/¯.
+it works pretty well, the only problem is that i noticed that if i approached the problem in a completely different way, it would have been both better to use and easier to implement, so i lost interest in continuing it ¯\\_(ツ)_/¯.
 
 for now it only works with a ps4 controller.
 
